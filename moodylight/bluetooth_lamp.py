@@ -19,6 +19,7 @@ __author__ = "Peter Boraros <pborky@pborky.sk>"
 #
 
 from threading import Thread
+from Queue import Queue,Empty,Full
 
 class Enum:
     """Base class for enums
@@ -26,7 +27,7 @@ class Enum:
     class __metaclass__(type):
         def __new__(mcs, name, bases, attrs):
             Meta = attrs.get('Meta')
-            if getattr(Meta,'reverse_mapping', default=True):
+            if getattr(Meta,'reverse_mapping', True):
                 reverse = {}
             else:
                 reverse = None
@@ -48,7 +49,7 @@ class Enum:
                         reverse[val] = key, resource
             if reverse is not None:
                 attrs['reverse'] = reverse.get
-            attrs.update(getattr(Meta,'attrs', default={}))
+            attrs.update(getattr(Meta,'attrs', {}))
             return type.__new__(mcs, name, bases, attrs)
 
 
@@ -139,10 +140,10 @@ class Strings:
         R.string.button_turn_off: ("Switch Off", "Vypnout"),
         R.string.app_name: ("Lamp Controller", "Ovladač Lampičky"),
     }
-    _unknown = ("Unknown string %d", "Neznamy retezec %d")
-    def getString(self, r):
-        if r in self._l:
-            return self._l.get(r)
+    @classmethod
+    def getString(cls, r):
+        if r in cls._l:
+            return cls._l.get(r)
         else:
             return "Unknown string %d"%r
 
@@ -242,13 +243,48 @@ class Color(Enum):
 class BluetoothLampCommandListener(Thread):
     def __init__(self, receiveCallback, **kwargs):
         super(BluetoothLampCommandListener, self).__init__(**kwargs)
+        self.daemon = True
         self.receiveCallback = receiveCallback
+        self.queue = Queue(1)
+        self.readOnly = False
     def sendData(self, data):
-        pass
+        if not self.readOnly:
+            self.queue.put_nowait(data)
+        else:
+            raise Exception('Command listener is read-only.')
     def setReadOnly(self, readOnly):
-        pass
+        print 'read-only' if readOnly else 'read-write'
     def handleReceivedLine(self, line):
         self.receiveCallback(line)
+    def run(self):
+        while True:
+            try:
+                item = self.queue.get(block=True,timeout=0.1)
+                if item.startswith(BluetoothLampCommand.ACTION_GET_LAMP_ID):
+                    pass
+                elif item.startswith(BluetoothLampCommand.ACTION_GET_LAMP_INFO):
+                    self.handleReceivedLine('0 20:60:100')
+                elif item.startswith(BluetoothLampCommand.ACTION_SET_EFFECT):
+                    pass
+                elif item.startswith(BluetoothLampCommand.ACTION_BACKLIGHT_SET_EFFECT):
+                    pass
+                elif item.startswith(BluetoothLampCommand.ACTION_SET_COLOR_WITH_CROSS_FADE):
+                    pass
+                elif item.startswith(BluetoothLampCommand.ACTION_SET_COLOR_HARD):
+                    pass
+                elif item.startswith(BluetoothLampCommand.ACTION_GET_LAMP_VERSION):
+                    self.handleReceivedLine('3 0.0.0')
+                elif item.startswith(BluetoothLampCommand.ACTION_GET_LAMP_SERIAL_NUMBER):
+                    self.handleReceivedLine('1 00000000')
+                elif item.startswith(BluetoothLampCommand.ACTION_GET_LAMP_CURRENT_SETTINGS):
+                    self.handleReceivedLine('4 0:0:0:0:0:0')
+                elif item.startswith(BluetoothLampCommand.ACTION_SET_COLOR_INTENSITY):
+                    pass
+                else:
+                    pass
+
+            except Empty:
+                pass
 
 class SerialTranciever(object):
     pass
@@ -256,9 +292,11 @@ class SerialTranciever(object):
 class BluetoothLamp(object):
     def __init__(self):
         self.listener = BluetoothLampCommandListener(self.receiveLine)
+        self.data = {}
         self.listener.start()
     def receiveLine(self, line):
-        self.data = BluetoothLampCommand.parse_line(line)
+        self.data.update(BluetoothLampCommand.parse_line(line))
+        print self.data
     def getCurrentSettings(self):
         """Requests current lamp settings"""
         self.listener.sendData(BluetoothLampCommand.ACTION_GET_LAMP_CURRENT_SETTINGS)
