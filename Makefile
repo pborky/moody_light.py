@@ -1,4 +1,5 @@
 
+.PHONY : rmenv  updateenv  updatetestenv updatedevenv
 
 initenv:
 	virtualenv .
