@@ -1,0 +1,7 @@
+!..gitignore
+bin/
+include/
+lib/
+local/
+share/
+initenv
