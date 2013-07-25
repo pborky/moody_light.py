@@ -1,5 +1,4 @@
 # coding=utf-8
-from itertools import chain
 
 __author__ = "Peter Boraros <pborky@pborky.sk>"
 
@@ -19,8 +18,7 @@ __author__ = "Peter Boraros <pborky@pborky.sk>"
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-import re
-
+from threading import Thread
 
 class Enum:
     """Base class for enums
@@ -187,6 +185,7 @@ class BluetoothLampCommand(Enum):
     ACTION_GET_LAMP_CURRENT_SETTINGS = "I 4"
     ACTION_SET_COLOR_INTENSITY = "p"
     class Meta:
+        import re
         reverse_mapping = False
         attrs = {  # TODO: replace with BNF-capable parser
             'LAMP_INFO': re.compile(r"^0 ([-]?[0-9]|[-]?[1-9][0-9]|[-]?100):([0-9]|[1-9][0-9]|100):(10[0-2][0-4]|[1-9][1-9][0-9]|[1-9][0-9]|[0-9])$"),
@@ -240,12 +239,13 @@ class Color(Enum):
     def blue(cls, color):
         return color & 0xFF
 
-class BluetoothLampCommandListener(object):
-    def __init__(self, receiveCallback):
+class BluetoothLampCommandListener(Thread):
+    def __init__(self, receiveCallback, **kwargs):
+        super(BluetoothLampCommandListener, self).__init__(**kwargs)
         self.receiveCallback = receiveCallback
     def sendData(self, data):
         pass
-    def setReadOnly(self):
+    def setReadOnly(self, readOnly):
         pass
     def handleReceivedLine(self, line):
         self.receiveCallback(line)
@@ -254,9 +254,11 @@ class SerialTranciever(object):
     pass
 
 class BluetoothLamp(object):
-
-    def __init__(self, listener):
-        self.listener = listener
+    def __init__(self):
+        self.listener = BluetoothLampCommandListener(self.receiveLine)
+        self.listener.start()
+    def receiveLine(self, line):
+        self.data = BluetoothLampCommand.parse_line(line)
     def getCurrentSettings(self):
         """Requests current lamp settings"""
         self.listener.sendData(BluetoothLampCommand.ACTION_GET_LAMP_CURRENT_SETTINGS)
